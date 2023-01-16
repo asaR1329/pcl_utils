@@ -30,15 +30,15 @@ class EuclideanClustering{
         /*parameters*/
         double cluster_tolerance;
         int min_cluster_size;
+        int target_ = 0;
+        double pre_x = 0;
+        double pre_y = 0;
+        double pre_z = 0;
     public:
         EuclideanClustering();
         void CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg);
         void Clustering(void);
         void Visualization(void);
-
-        double pre_x = 0;
-        double pre_y = 0;
-        double pre_z = 0;
 };
 
 EuclideanClustering::EuclideanClustering()
@@ -54,6 +54,7 @@ EuclideanClustering::EuclideanClustering()
 
     nhPrivate.param("cluster_tolerance", cluster_tolerance, 5.0);
     nhPrivate.param("min_cluster_size", min_cluster_size, 30);
+    nhPrivate.param("target_", target_, 1);
     std::cout << "cluster_tolerance = " << cluster_tolerance << std::endl;
     std::cout << "min_cluster_size = " << min_cluster_size << std::endl;
 }
@@ -155,7 +156,8 @@ void EuclideanClustering::Clustering(void)
         moms->points[i].z = z_ave;
 
         // add path
-        if(i==0){
+        // if(i==target_){
+        if(y_ave >= 5 ){
             // 距離計算
             dx = x_ave - pre_x;
             dy = y_ave - pre_y;
@@ -166,7 +168,7 @@ void EuclideanClustering::Clustering(void)
             std::cout << " dx:     " << dz << std::endl;
             // 一定距離以内でpathに追加
             std::cout << "  dist:   " << dist << std::endl;
-            if(dist <= cluster_tolerance)
+            if(dist <= 4*cluster_tolerance)
             {
                 geometry_msgs::PoseStamped path_point;
                 path_point.pose.position.x = x_ave;
@@ -175,7 +177,7 @@ void EuclideanClustering::Clustering(void)
                 path_point.pose.orientation.w = 1;
                 mom_path.poses.push_back(path_point);
             }
-            else // pathのクリア
+            else // 一定距離離れたらpathをクリア
             {
                 std::cout << "---cleared path---" << std::endl;
                 mom_path.poses.clear();
@@ -202,6 +204,7 @@ void EuclideanClustering::Clustering(void)
     pub_moms.publish(mom_pc);
     pub_path.publish(mom_path);
 
+    moms->points.clear();
 
     std::cout << "clustering time [s] = " << ros::Time::now().toSec() - time_start << std::endl;
 }
