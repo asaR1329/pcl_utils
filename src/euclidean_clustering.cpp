@@ -8,6 +8,8 @@
 #include <pcl/visualization/cloud_viewer.h>
 #include <geometry_msgs/PointStamped.h>
 #include <nav_msgs/Path.h>
+#include <iostream>
+#include <fstream>
 
 class EuclideanClustering{
     private:
@@ -30,10 +32,16 @@ class EuclideanClustering{
         /*parameters*/
         double cluster_tolerance;
         int min_cluster_size;
-        int target_ = 0;
+
+        int target_;
+        int cluster_id_;
+        double tracking_tolerance;
         double pre_x = 0;
         double pre_y = 0;
         double pre_z = 0;
+        bool tracking = false;
+        std::string output_csv_path = "~/catkin_ws/src/clustering_pcl/output/output.csv";
+        std::string input_csv_path = "~/catkin_ws/src/clustering_pcl/input/input.csv";
     public:
         EuclideanClustering();
         void CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg);
@@ -45,8 +53,8 @@ EuclideanClustering::EuclideanClustering()
     :nhPrivate("~")
 {
     sub_pc = nh.subscribe("/velodyne_obstacles", 1, &EuclideanClustering::CallbackPC, this);
-    pub_mom = nh.advertise<geometry_msgs::PointStamped>("/moment_point", 10);
-    pub_moms = nh.advertise<sensor_msgs::PointCloud2>("/moments", 10);
+    pub_mom = nh.advertise<geometry_msgs::PointStamped>("/moment_point", 10); // テスト用
+    pub_moms = nh.advertise<sensor_msgs::PointCloud2>("/moments", 10); // 全クラスターの重心
     pub_path = nh.advertise<nav_msgs::Path>("/mom_path", 10);
     viewer.setBackgroundColor(1, 1, 1);
     viewer.addCoordinateSystem(1.0, "axis");
@@ -55,6 +63,8 @@ EuclideanClustering::EuclideanClustering()
     nhPrivate.param("cluster_tolerance", cluster_tolerance, 5.0);
     nhPrivate.param("min_cluster_size", min_cluster_size, 30);
     nhPrivate.param("target_", target_, 1);
+    nhPrivate.param("cluster_id_", cluster_id_, 1);
+    nhPrivate.param("tracking_tolerance", tracking_tolerance, 5.0);
     std::cout << "cluster_tolerance = " << cluster_tolerance << std::endl;
     std::cout << "min_cluster_size = " << min_cluster_size << std::endl;
 }
@@ -106,6 +116,11 @@ void EuclideanClustering::Clustering(void)
 
     std::cout << "cluster_indices.size() = " << cluster_indices.size() << std::endl;
 
+    std::cout << "target object" << std::endl;
+    std::cout << " pre_x: " << pre_x << std::endl;
+    std::cout << " pre_y: " << pre_y << std::endl;
+    std::cout << " pre_z: " << pre_z << std::endl;
+
     /*dividing（クラスタごとに点群を分割)*/
     pcl::ExtractIndices<pcl::PointXYZ> ei;
     ei.setInputCloud(cloud);
@@ -121,9 +136,13 @@ void EuclideanClustering::Clustering(void)
         clusters.push_back(tmp_clustered_points);
     }
 
+    /* クラスタの重心の計算 */
     int i = 0; // cluster count
     double dist = 0; // distance
     double dx, dy, dz;
+    bool addPath = false; // pathが追加されたか
+    std::ofstream ofs_csv_file(output_csv_path);
+    /* 全クラスタについて重心を計算 */
     for(auto it = cluster_indices.begin(); it != cluster_indices.end(); ++it){ // cluster size
         double x_ave = 0;
         double y_ave = 0;
@@ -146,6 +165,7 @@ void EuclideanClustering::Clustering(void)
 
         // 重心の処理 //
         std::cout << "pt_size: " << pt_size << std::endl;
+        std::cout << " i    :  " << i << std::endl;
         std::cout << " x_ave:  " << x_ave << std::endl;
         std::cout << " y_ave:  " << y_ave << std::endl;
         std::cout << " z_ave:  " << z_ave << std::endl;
@@ -155,32 +175,43 @@ void EuclideanClustering::Clustering(void)
         moms->points[i].y = y_ave;
         moms->points[i].z = z_ave;
 
-        // add path
-        // if(i==target_){
-        if(y_ave >= 5 ){
-            // 距離計算
-            dx = x_ave - pre_x;
-            dy = y_ave - pre_y;
-            dz = z_ave - pre_z;
-            dist = sqrt( pow(dx,2)+pow(dy,2)+pow(dz,2) );
+        /* 出力する軌跡の作成 */
+        // 追跡したいクラスターの設定
+        if(i==cluster_id_ && tracking==false){
+            pre_x = x_ave;
+            pre_y = y_ave;
+            pre_z = z_ave;
+            tracking = true;
+            mom_path.poses.clear();
+            std::cout << "---start tracking---" << std::endl;
+            std::cout << " x_ave:  " << x_ave << std::endl;
+            std::cout << " y_ave:  " << y_ave << std::endl;
+            std::cout << " z_ave:  " << z_ave << std::endl;
+        }
+        // それぞれの重心と追跡したい重心の距離を求める
+        dx = x_ave - pre_x;
+        dy = y_ave - pre_y;
+        dz = z_ave - pre_z;
+        dist = sqrt( pow(dx,2)+pow(dy,2)+pow(dz,2) );
+        std::cout << " dist :  " << dist << std::endl;
+
+        // 重心が追跡したい物体と近ければpathに追加
+        if(dist <= tracking_tolerance){
             std::cout << " dx:     " << dx << std::endl;
             std::cout << " dy:     " << dy << std::endl;
             std::cout << " dx:     " << dz << std::endl;
             // 一定距離以内でpathに追加
             std::cout << "  dist:   " << dist << std::endl;
-            if(dist <= 4*cluster_tolerance)
+            if(dist <= tracking_tolerance && !addPath)
             {
+                std::cout << "  ^ add path---" << std::endl;
+                addPath = true;
                 geometry_msgs::PoseStamped path_point;
                 path_point.pose.position.x = x_ave;
                 path_point.pose.position.y = y_ave;
                 path_point.pose.position.z = z_ave;
                 path_point.pose.orientation.w = 1;
                 mom_path.poses.push_back(path_point);
-            }
-            else // 一定距離離れたらpathをクリア
-            {
-                std::cout << "---cleared path---" << std::endl;
-                mom_path.poses.clear();
             }
             // 値保存
             pre_x = x_ave;
@@ -190,6 +221,15 @@ void EuclideanClustering::Clustering(void)
 
         i++; // next index
 
+    }
+    // 全クラスタの探索終了
+
+    // 一定距離内の点がなかったらpathをクリア&出力
+    if(!addPath)
+    {
+        std::cout << "---cleared path---" << std::endl;
+        mom_path.poses.clear();
+        tracking = false;
     }
 
     // publishのあれこれ
