@@ -8,8 +8,10 @@
 #include <pcl/visualization/cloud_viewer.h>
 #include <geometry_msgs/PointStamped.h>
 #include <nav_msgs/Path.h>
+#include <string>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 class EuclideanClustering{
     private:
@@ -22,6 +24,7 @@ class EuclideanClustering{
         ros::Publisher pub_mom;
         ros::Publisher pub_moms;
         ros::Publisher pub_path;
+        ros::Publisher pub_kf_path;
         /*pcl objects*/
         pcl::visualization::PCLVisualizer viewer {"Euclidian Clustering"};
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud {new pcl::PointCloud<pcl::PointXYZ>};
@@ -29,6 +32,7 @@ class EuclideanClustering{
         std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clusters;
         geometry_msgs::PointStamped point_msg;
         nav_msgs::Path mom_path;
+        nav_msgs::Path kf_path;
         /*parameters*/
         double cluster_tolerance;
         int min_cluster_size;
@@ -40,8 +44,9 @@ class EuclideanClustering{
         double pre_y = 0;
         double pre_z = 0;
         bool tracking = false;
-        std::string output_csv_path = "~/catkin_ws/src/clustering_pcl/output/output.csv";
-        std::string input_csv_path = "~/catkin_ws/src/clustering_pcl/input/input.csv";
+        bool is_input_csv = false;
+        std::string input_csv_path = "/home/amsl/catkin_ws/src/clustering_pcl/input/input.csv";
+        std::string output_csv_path = "/home/amsl/catkin_ws/src/clustering_pcl/output/output.csv";
     public:
         EuclideanClustering();
         void CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg);
@@ -56,6 +61,7 @@ EuclideanClustering::EuclideanClustering()
     pub_mom = nh.advertise<geometry_msgs::PointStamped>("/moment_point", 10); // テスト用
     pub_moms = nh.advertise<sensor_msgs::PointCloud2>("/moments", 10); // 全クラスターの重心
     pub_path = nh.advertise<nav_msgs::Path>("/mom_path", 10);
+    pub_kf_path = nh.advertise<nav_msgs::Path>("/kf_path", 10);
     viewer.setBackgroundColor(1, 1, 1);
     viewer.addCoordinateSystem(1.0, "axis");
     viewer.setCameraPosition(0.0, 0.0, 35.0, 0.0, 0.0, 0.0);
@@ -81,6 +87,39 @@ void EuclideanClustering::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg
     moms->height = 1;
     moms->points.resize(moms->width * moms->height);
     std::cout << "moms ->points.size() = " << moms->points.size() << std::endl;
+
+    /* kf path のinput */
+    std::cout << "===input csv===" << std::endl;
+    std::ifstream ifs(input_csv_path);
+    int kf = 0;
+    double kfx = 0;
+    double kfy = 0;
+    std::string line;
+    std::string line_buf;
+    if(!ifs){
+        std::cout << "Error" << static_cast<bool>(ifs) << std::endl;
+    }
+    while (getline(ifs, line) && !is_input_csv){
+        std::cout << "line = " << std::endl;
+        std::cout << line << std::endl;
+        std::istringstream i_stream(line);
+        kf = 0;
+        while(getline(i_stream, line_buf, ',')){
+            if(kf==0){ kfx = stod(line_buf);}
+            if(kf==2){ kfy = stod(line_buf);}
+            kf++;
+        }
+        std::cout << "kfx =  " << kfx << std::endl;
+        std::cout << "kfy =  " << kfy << std::endl;
+        geometry_msgs::PoseStamped path_point;
+        path_point.pose.position.x = kfy;
+        path_point.pose.position.y = kfx;
+        path_point.pose.position.z = 0;
+        path_point.pose.orientation.w = 1;
+        kf_path.poses.push_back(path_point);
+    }
+    is_input_csv = true;
+    //
 
     clusters.clear();
     Clustering();
@@ -240,9 +279,12 @@ void EuclideanClustering::Clustering(void)
     mom_pc.header.stamp = ros::Time::now();
     mom_path.header.frame_id = "velodyne";
     mom_path.header.stamp = ros::Time::now();
+    kf_path.header.frame_id = "velodyne";
+    kf_path.header.stamp = ros::Time::now();
 
     pub_moms.publish(mom_pc);
     pub_path.publish(mom_path);
+    pub_kf_path.publish(kf_path);
 
     moms->points.clear();
 
@@ -289,3 +331,4 @@ int main(int argc, char** argv)
 
     ros::spin();
 }
+
