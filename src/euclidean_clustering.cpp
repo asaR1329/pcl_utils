@@ -45,6 +45,7 @@ class EuclideanClustering{
         double pre_z = 0;
         bool tracking = false;
         bool is_input_csv = false;
+        bool is_show = false;
         std::string input_csv_path = "/home/amsl/catkin_ws/src/clustering_pcl/input/input.csv";
         std::string output_csv_path = "/home/amsl/catkin_ws/src/clustering_pcl/output/output.csv";
     public:
@@ -71,8 +72,10 @@ EuclideanClustering::EuclideanClustering()
     nhPrivate.param("target_", target_, 1);
     nhPrivate.param("cluster_id_", cluster_id_, 1);
     nhPrivate.param("tracking_tolerance", tracking_tolerance, 5.0);
-    std::cout << "cluster_tolerance = " << cluster_tolerance << std::endl;
-    std::cout << "min_cluster_size = " << min_cluster_size << std::endl;
+    nhPrivate.param("is_show", is_show, false);
+
+    // std::cout << "cluster_tolerance = " << cluster_tolerance << std::endl;
+    // std::cout << "min_cluster_size = " << min_cluster_size << std::endl;
 }
 
 void EuclideanClustering::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -80,16 +83,16 @@ void EuclideanClustering::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg
     /* std::cout << "CALLBACK PC" << std::endl; */
 
     pcl::fromROSMsg(*msg, *cloud);
-    std::cout << "==========" << std::endl;
-    std::cout << "cloud->points.size() = " << cloud->points.size() << std::endl;
+    // std::cout << "==========" << std::endl;
+    // std::cout << "cloud->points.size() = " << cloud->points.size() << std::endl;
 
     moms->width = 100;
     moms->height = 1;
     moms->points.resize(moms->width * moms->height);
-    std::cout << "moms ->points.size() = " << moms->points.size() << std::endl;
+    // std::cout << "moms ->points.size() = " << moms->points.size() << std::endl;
 
     /* kf path のinput */
-    std::cout << "===input csv===" << std::endl;
+    // std::cout << "===input csv===" << std::endl;
     std::ifstream ifs(input_csv_path);
     int kf = 0;
     double kfx = 0;
@@ -100,8 +103,8 @@ void EuclideanClustering::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg
         std::cout << "Error" << static_cast<bool>(ifs) << std::endl;
     }
     while (getline(ifs, line) && !is_input_csv){
-        std::cout << "line = " << std::endl;
-        std::cout << line << std::endl;
+        // std::cout << "line = " << std::endl;
+        // std::cout << line << std::endl;
         std::istringstream i_stream(line);
         kf = 0;
         while(getline(i_stream, line_buf, ',')){
@@ -109,8 +112,8 @@ void EuclideanClustering::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg
             if(kf==2){ kfy = stod(line_buf);}
             kf++;
         }
-        std::cout << "kfx =  " << kfx << std::endl;
-        std::cout << "kfy =  " << kfy << std::endl;
+        // std::cout << "kfx =  " << kfx << std::endl;
+        // std::cout << "kfy =  " << kfy << std::endl;
         geometry_msgs::PoseStamped path_point;
         path_point.pose.position.x = kfy;
         path_point.pose.position.y = kfx;
@@ -119,7 +122,7 @@ void EuclideanClustering::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg
         kf_path.poses.push_back(path_point);
     }
     is_input_csv = true;
-    //
+
 
     clusters.clear();
     Clustering();
@@ -153,12 +156,12 @@ void EuclideanClustering::Clustering(void)
     /*クラスリング実行*/
     ece.extract(cluster_indices);
 
-    std::cout << "cluster_indices.size() = " << cluster_indices.size() << std::endl;
-
-    std::cout << "target object" << std::endl;
-    std::cout << " pre_x: " << pre_x << std::endl;
-    std::cout << " pre_y: " << pre_y << std::endl;
-    std::cout << " pre_z: " << pre_z << std::endl;
+    // std::cout << "cluster_indices.size() = " << cluster_indices.size() << std::endl;
+    //
+    // std::cout << "target object" << std::endl;
+    // std::cout << " pre_x: " << pre_x << std::endl;
+    // std::cout << " pre_y: " << pre_y << std::endl;
+    // std::cout << " pre_z: " << pre_z << std::endl;
 
     /*dividing（クラスタごとに点群を分割)*/
     pcl::ExtractIndices<pcl::PointXYZ> ei;
@@ -203,16 +206,26 @@ void EuclideanClustering::Clustering(void)
         z_ave = z_ave / pt_size;
 
         // 重心の処理 //
-        std::cout << "pt_size: " << pt_size << std::endl;
-        std::cout << " i    :  " << i << std::endl;
-        std::cout << " x_ave:  " << x_ave << std::endl;
-        std::cout << " y_ave:  " << y_ave << std::endl;
-        std::cout << " z_ave:  " << z_ave << std::endl;
+        if(is_show){
+            std::cout << "pt_size: " << pt_size << std::endl;
+            std::cout << " i    :  " << i << std::endl;
+            std::cout << " x_ave:  " << x_ave << std::endl;
+            std::cout << " y_ave:  " << y_ave << std::endl;
+            std::cout << " z_ave:  " << z_ave << std::endl;
+        }
 
         // point cloud
-        moms->points[i].x = x_ave;
-        moms->points[i].y = y_ave;
-        moms->points[i].z = z_ave;
+        pcl::PointXYZ temp_pt;
+        temp_pt.x = x_ave;
+        temp_pt.y = y_ave;
+        temp_pt.z = z_ave;
+        moms->push_back(temp_pt);
+        // moms->points[i].x = x_ave;
+        // moms->points[i].y = y_ave;
+        // moms->points[i].z = z_ave;
+        // moms->points[0].x = x_ave;
+        // moms->points[0].y = y_ave;
+        // moms->points[0].z = z_ave;
 
         /* 出力する軌跡の作成 */
         // 追跡したいクラスターの設定
@@ -222,29 +235,30 @@ void EuclideanClustering::Clustering(void)
             pre_z = z_ave;
             tracking = true;
             mom_path.poses.clear();
-            std::cout << "---start tracking---" << std::endl;
-            std::cout << " x_ave:  " << x_ave << std::endl;
-            std::cout << " y_ave:  " << y_ave << std::endl;
-            std::cout << " z_ave:  " << z_ave << std::endl;
+            // std::cout << "---start tracking---" << std::endl;
+            // std::cout << " x_ave:  " << x_ave << std::endl;
+            // std::cout << " y_ave:  " << y_ave << std::endl;
+            // std::cout << " z_ave:  " << z_ave << std::endl;
         }
         // それぞれの重心と追跡したい重心の距離を求める
         dx = x_ave - pre_x;
         dy = y_ave - pre_y;
         dz = z_ave - pre_z;
         dist = sqrt( pow(dx,2)+pow(dy,2)+pow(dz,2) );
-        std::cout << " dist :  " << dist << std::endl;
+        // std::cout << " dist :  " << dist << std::endl;
 
         // 重心が追跡したい物体と近ければpathに追加
         if(dist <= tracking_tolerance){
-            std::cout << " dx:     " << dx << std::endl;
-            std::cout << " dy:     " << dy << std::endl;
-            std::cout << " dx:     " << dz << std::endl;
+            // std::cout << " dx:     " << dx << std::endl;
+            // std::cout << " dy:     " << dy << std::endl;
+            // std::cout << " dx:     " << dz << std::endl;
             // 一定距離以内でpathに追加
-            std::cout << "  dist:   " << dist << std::endl;
+            // std::cout << "  dist:   " << dist << std::endl;
             if(dist <= tracking_tolerance && !addPath)
             {
-                std::cout << "  ^ add path---" << std::endl;
+                // std::cout << "  ^ add path---" << std::endl;
                 addPath = true;
+                std::cout << dx << "," << dy << "," << dz << std::endl;
                 geometry_msgs::PoseStamped path_point;
                 path_point.pose.position.x = x_ave;
                 path_point.pose.position.y = y_ave;
@@ -266,7 +280,7 @@ void EuclideanClustering::Clustering(void)
     // 一定距離内の点がなかったらpathをクリア&出力
     if(!addPath)
     {
-        std::cout << "---cleared path---" << std::endl;
+        // std::cout << "---cleared path---" << std::endl;
         mom_path.poses.clear();
         tracking = false;
     }
@@ -286,9 +300,9 @@ void EuclideanClustering::Clustering(void)
     pub_path.publish(mom_path);
     pub_kf_path.publish(kf_path);
 
-    moms->points.clear();
+    moms->clear();
 
-    std::cout << "clustering time [s] = " << ros::Time::now().toSec() - time_start << std::endl;
+    // std::cout << "clustering time [s] = " << ros::Time::now().toSec() - time_start << std::endl;
 }
 
 void EuclideanClustering::Visualization(void)
